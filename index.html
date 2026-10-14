@@ -10,16 +10,12 @@
     <meta property="og:type" content="website" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Afterhours FM — Campus, on your frequency</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preconnect" href="https://images.pexels.com" />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="page-shell" id="top">
       <header class="topbar">
-        <a class="brand" href="#top" aria-label="Afterhours FM home">
+        <a class="brand" href="#top">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
           <span>AFTERHOURS <b>FM</b><small>AMRITA CAMPUS RADIO</small></span>
         </a>
@@ -83,6 +79,7 @@
           </div>
           <p class="lineup-status" id="lineupStatus" role="status" aria-live="polite"><span class="status-wave">〰</span> Tuning into the campus signal…</p>
           <div class="event-grid" id="eventGrid" aria-live="off" aria-busy="true"></div>
+          <button class="load-more" id="loadMore" type="button" hidden>LOAD MORE FROM THE ROTATION <span>↘</span></button>
           <div class="api-state" id="apiState" hidden><span class="api-state-mark" aria-hidden="true">〰</span><h3 id="apiStateTitle">The signal’s quiet.</h3><p id="apiStateMessage">We couldn’t reach the station right now.</p><button class="retry-button" id="retryButton" type="button">TRY AGAIN <span>↻</span></button></div>
           <div class="no-results" id="noResults" hidden><span>☾</span><h3>Nothing on this frequency.</h3><p id="noResultsMessage">Try another date or tune back to all signals.</p><button class="reset-filters" id="resetFilters" type="button">RESET THE DIAL</button></div>
           <div class="lineup-bottom"><span><span class="live-dot"></span> <span id="eventCount" role="status" aria-live="polite">WAITING FOR THE ROTATION</span></span><span>MORE SOUNDS SOON <b>↗</b></span></div>

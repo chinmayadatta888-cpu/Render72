@@ -6,6 +6,7 @@ Afterhours FM is a responsive campus events site styled as an independent radio 
 
 - Live event lineup from the public Render72 API.
 - Search by event name, summary, category, mode, or tags.
+- Progressive event loading keeps the initial list light while still exposing the full API lineup.
 - Tune the radio presets to all events, technical events, cultural events, or music.
 - Filter by upcoming date, tonight, this week, later, or all dates (IST).
 - Open event details in an accessible dialog, with shareable `?event=<uuid>` URLs.

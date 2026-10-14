@@ -44,6 +44,7 @@ let events = [];
 let activeStation = 0;
 let activeDate = 'upcoming';
 let activeFeatured = null;
+let visibleEventCount = 9;
 let eventFetchController;
 let detailFetchController;
 
@@ -90,6 +91,27 @@ function safeImageUrl(value) {
   } catch {
     return '';
   }
+}
+
+function resizedRemoteImage(value, width = 520, height = 360) {
+  const safe = safeImageUrl(value);
+  if (!safe) return '';
+  try {
+    const url = new URL(safe);
+    if (url.hostname === 'images.pexels.com') {
+      url.searchParams.set('w', String(width));
+      url.searchParams.set('h', String(height));
+      url.searchParams.set('fit', 'crop');
+      url.searchParams.set('fm', 'webp');
+    }
+    return url.href;
+  } catch {
+    return safe;
+  }
+}
+
+function localCoverImage(eventId) {
+  return `/assets/events/${encodeURIComponent(eventId)}.webp`;
 }
 
 function isUpcoming(event) {
@@ -156,11 +178,17 @@ function setFeatured() {
   const imageUrl = safeImageUrl(featured.cover_image_url);
   if (imageUrl) {
     const image = element('img', 'featured-image');
-    image.src = imageUrl;
+    image.dataset.remoteFallback = resizedRemoteImage(imageUrl, 360, 280);
+    image.onerror = () => {
+      if (image.dataset.remoteFallback) {
+        image.src = image.dataset.remoteFallback;
+        image.dataset.remoteFallback = '';
+      } else image.remove();
+    };
+    image.src = localCoverImage(featured.id);
     image.alt = '';
     image.loading = 'lazy';
     image.decoding = 'async';
-    image.onerror = () => image.remove();
     art.append(image);
   }
   art.append(element('span', 'featured-symbol', '✳'));
@@ -187,12 +215,18 @@ function createCard(event, index) {
   const imageUrl = safeImageUrl(event.cover_image_url);
   if (imageUrl) {
     const image = element('img', 'event-cover');
-    image.src = imageUrl;
+    image.dataset.remoteFallback = resizedRemoteImage(imageUrl);
+    image.onerror = () => {
+      if (image.dataset.remoteFallback) {
+        image.src = image.dataset.remoteFallback;
+        image.dataset.remoteFallback = '';
+      } else image.remove();
+    };
+    image.src = localCoverImage(event.id);
     image.alt = event.cover_image_alt || '';
     image.loading = index < 3 ? 'eager' : 'lazy';
     image.decoding = 'async';
     image.fetchPriority = index === 0 ? 'high' : 'auto';
-    image.onerror = () => image.remove();
     art.append(image);
   }
   art.append(element('span', 'art-index', String(index + 1).padStart(2, '0')));
@@ -224,10 +258,15 @@ function createCard(event, index) {
   return card;
 }
 
-function renderEvents() {
+function renderEvents(resetCount = true) {
+  if (resetCount) visibleEventCount = 9;
   const results = filteredEvents();
-  eventGrid.replaceChildren(...results.map(createCard));
+  const visibleEvents = results.slice(0, visibleEventCount);
+  eventGrid.replaceChildren(...visibleEvents.map(createCard));
   eventGrid.hidden = results.length === 0;
+  const loadMore = document.querySelector('#loadMore');
+  loadMore.hidden = results.length <= visibleEvents.length;
+  loadMore.textContent = `LOAD ${Math.min(9, results.length - visibleEvents.length)} MORE FROM THE ROTATION ↘`;
   noResults.hidden = results.length > 0 || apiState.hidden === false;
   noResultsMessage.textContent = activeDate === 'tonight'
     ? 'No events are scheduled tonight. Try the full week or keep the frequency open.'
@@ -237,6 +276,11 @@ function renderEvents() {
   eventCount.textContent = results.length ? `${String(results.length).padStart(2, '0')} ${results.length === 1 ? 'EVENT' : 'EVENTS'} ON THIS FREQUENCY` : 'NO EVENTS ON THIS FREQUENCY';
   eventGrid.setAttribute('aria-busy', 'false');
 }
+
+document.querySelector('#loadMore').addEventListener('click', () => {
+  visibleEventCount += 9;
+  renderEvents(false);
+});
 
 function setStation(value) {
   activeStation = Math.max(0, Math.min(stations.length - 1, Number(value) || 0));
@@ -358,7 +402,7 @@ function renderDetail(event) {
   if (imageUrl) {
     const hero = element('div', 'detail-hero');
     const image = element('img', '', '');
-    image.src = imageUrl;
+    image.src = resizedRemoteImage(imageUrl, 1200, 700);
     image.alt = event.banner_image_alt || event.cover_image_alt || '';
     image.loading = 'eager';
     image.decoding = 'async';
@@ -479,7 +523,7 @@ function closeEventDialog({ updateUrl = true } = {}) {
   if (updateUrl && new URLSearchParams(window.location.search).has('event')) {
     const url = new URL(window.location.href);
     url.searchParams.delete('event');
-    history.pushState({}, '', url);
+    history.replaceState({}, '', url);
   }
   document.title = 'Afterhours FM — Campus, on your frequency';
   document.querySelector('meta[name="description"]').content = "Afterhours FM — your frequency for campus events, late-night ideas, and good company.";
