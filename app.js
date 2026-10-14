@@ -7,6 +7,9 @@ const themeToggle = document.querySelector('#themeToggle');
 const themeMeta = document.querySelector('meta[name="theme-color"]');
 const themeIcon = themeToggle.querySelector('.toggle-icon');
 const themeText = themeToggle.querySelector('.toggle-text');
+const hapticToggle = document.querySelector('#hapticToggle');
+const hapticState = document.querySelector('#hapticState');
+const tuningCursor = document.querySelector('#tuningCursor');
 const storedTheme = localStorage.getItem('afterhours-theme');
 
 function setTheme(theme) {
@@ -47,6 +50,43 @@ let activeFeatured = null;
 let visibleEventCount = 9;
 let eventFetchController;
 let detailFetchController;
+let hapticsEnabled = localStorage.getItem('afterhours-haptics') === 'on';
+let lastHapticAt = 0;
+
+function updateHapticsControl() {
+  hapticToggle.setAttribute('aria-pressed', String(hapticsEnabled));
+  hapticToggle.classList.toggle('is-on', hapticsEnabled);
+  hapticState.textContent = hapticsEnabled ? 'ON' : 'OFF';
+}
+
+updateHapticsControl();
+hapticToggle.addEventListener('click', () => {
+  hapticsEnabled = !hapticsEnabled;
+  localStorage.setItem('afterhours-haptics', hapticsEnabled ? 'on' : 'off');
+  updateHapticsControl();
+});
+
+function tactileTick() {
+  if (!hapticsEnabled || !('vibrate' in navigator) || !window.matchMedia('(pointer: coarse)').matches) return;
+  const now = performance.now();
+  if (now - lastHapticAt < 100) return;
+  lastHapticAt = now;
+  navigator.vibrate(8);
+}
+
+const radioScene = document.querySelector('.radio-scene');
+radioScene.addEventListener('pointerenter', (event) => {
+  if (event.pointerType === 'mouse' && window.matchMedia('(hover: hover) and (pointer: fine)').matches) tuningCursor.classList.add('is-visible');
+});
+radioScene.addEventListener('pointermove', (event) => {
+  if (event.pointerType !== 'mouse') return;
+  tuningCursor.style.setProperty('--cursor-x', `${event.clientX}px`);
+  tuningCursor.style.setProperty('--cursor-y', `${event.clientY}px`);
+  tuningCursor.classList.toggle('is-snapped', Boolean(event.target.closest('.dial-presets button, #stationDial')));
+});
+radioScene.addEventListener('pointerleave', () => {
+  tuningCursor.classList.remove('is-visible', 'is-snapped');
+});
 
 const stations = [
   { label: 'ALL SIGNALS', frequency: '99.7', matches: () => true },
@@ -282,8 +322,10 @@ document.querySelector('#loadMore').addEventListener('click', () => {
   renderEvents(false);
 });
 
-function setStation(value) {
+function setStation(value, { tactile = false } = {}) {
+  const previousStation = activeStation;
   activeStation = Math.max(0, Math.min(stations.length - 1, Number(value) || 0));
+  if (tactile && activeStation !== previousStation) tactileTick();
   const station = stations[activeStation];
   stationDial.value = String(activeStation);
   document.querySelector('#tuningDial').style.setProperty('--dial-position', `${activeStation / (stations.length - 1) * 100}%`);
@@ -298,8 +340,8 @@ function setStation(value) {
   renderEvents();
 }
 
-stationDial.addEventListener('input', () => setStation(stationDial.value));
-presetButtons.forEach((button) => button.addEventListener('click', () => setStation(button.dataset.station)));
+stationDial.addEventListener('input', (event) => setStation(stationDial.value, { tactile: event.isTrusted }));
+presetButtons.forEach((button) => button.addEventListener('click', (event) => setStation(button.dataset.station, { tactile: event.isTrusted })));
 dateButtons.forEach((button) => button.addEventListener('click', () => {
   activeDate = button.dataset.date;
   dateButtons.forEach((item) => {

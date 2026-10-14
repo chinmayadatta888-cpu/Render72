@@ -51,7 +51,8 @@
                   <span class="dial-label">FM / AM TUNER · TUNE IN</span>
                   <div class="dial" id="tuningDial"><input id="stationDial" type="range" min="0" max="3" step="1" value="0" aria-label="Tune event station" aria-valuetext="All signals" /><span class="dial-frequency" id="dialFrequency">99.7</span></div>
                   <div class="frequency dial-presets" id="dialPresets"><button type="button" data-station="0" class="is-active">ALL</button><button type="button" data-station="1">IDEAS</button><button type="button" data-station="2">CULTURE</button><button type="button" data-station="3">MUSIC</button></div>
-                  <div class="tuned-in"><span class="pulse"></span> <span id="tunedLabel">ALL SIGNALS</span></div>
+                  <div class="tuned-in"><span class="pulse"></span> <span id="tunedLabel">ALL SIGNALS</span><span class="tuned-frequency">SIGNAL LOCKED</span></div>
+                  <button class="haptic-toggle" id="hapticToggle" type="button" aria-pressed="false" title="Enable a subtle vibration when tuning on supported phones"><span class="haptic-indicator" aria-hidden="true"></span><span class="haptic-copy">TACTILE TICKS</span><span class="haptic-state" id="hapticState">OFF</span></button>
                 </div>
               </div>
               <div class="radio-controls"><span class="control-knob" aria-hidden="true"></span><span class="control-knob small" aria-hidden="true"></span><span class="control-caption">VOLUME</span><span class="control-knob small" aria-hidden="true"></span><span class="control-caption">TUNING</span><span class="control-knob" aria-hidden="true"></span></div>
@@ -72,7 +73,7 @@
         </section>
 
         <section class="lineup-section" id="lineup" aria-labelledby="lineupTitle">
-          <div class="section-heading"><div><p class="eyebrow">FREQUENCIES WORTH FINDING</p><h2 id="lineupTitle">The lineup<span class="heading-period">.</span></h2></div><p class="section-note">Pick a date. Follow a feeling.<br />We'll meet you there.</p></div>
+            <div class="section-heading"><div><p class="eyebrow">FREQUENCIES WORTH FINDING</p><h2 id="lineupTitle">The lineup<span class="heading-period">.</span></h2></div><p class="section-note">A campus broadcast log.<br />Pick a date. Follow a feeling.</p></div>
           <div class="lineup-toolbar">
             <div class="date-filters" role="group" aria-label="Filter events by date"><button class="date-chip selected" data-date="upcoming" aria-pressed="true">UPCOMING</button><button class="date-chip" data-date="tonight" aria-pressed="false">TONIGHT</button><button class="date-chip" data-date="week" aria-pressed="false">THIS WEEK</button><button class="date-chip" data-date="later" aria-pressed="false">LATER</button><button class="date-chip" data-date="all" aria-pressed="false">ALL DATES</button></div>
             <label class="search-box"><span aria-hidden="true">⌕</span><input id="eventSearch" type="search" placeholder="Find your frequency..." aria-label="Search events" /></label>
@@ -90,6 +91,7 @@
       <footer class="footer"><a class="brand footer-brand" href="#top"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>AFTERHOURS <b>FM</b><small>AMRITA CAMPUS RADIO</small></span></a><span class="footer-center">INDEPENDENTLY TUNED IN. ALWAYS OPEN.</span><span class="footer-right">EST. 2026 <i>✳</i> 99.7 FM</span></footer>
     </div>
 
+    <div class="tuning-cursor" id="tuningCursor" aria-hidden="true"><span></span></div>
     <dialog class="event-dialog" id="eventDialog" aria-labelledby="detailTitle"><button class="dialog-close" id="dialogClose" type="button" aria-label="Close event details">×</button><div class="detail-content" id="detailContent"><div class="detail-loading" role="status"><span class="status-wave">〰</span> Tuning in to event details…</div></div></dialog>
     <script src="/app.js"></script>
   </body>
