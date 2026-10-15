@@ -1,31 +1,14 @@
 const API_URL = 'https://render72.pages.dev/api/test/events';
-const CACHE_KEY = 'afterhours-events-v1';
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_KEY = 'afterbell-events-v1';
+const CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
 const TIME_ZONE = 'Asia/Kolkata';
-const root = document.documentElement;
-const themeToggle = document.querySelector('#themeToggle');
 const themeMeta = document.querySelector('meta[name="theme-color"]');
-const themeIcon = themeToggle.querySelector('.toggle-icon');
-const themeText = themeToggle.querySelector('.toggle-text');
-const hapticToggle = document.querySelector('#hapticToggle');
-const hapticState = document.querySelector('#hapticState');
-const tuningCursor = document.querySelector('#tuningCursor');
-const storedTheme = localStorage.getItem('afterhours-theme');
-
-function setTheme(theme) {
-  root.dataset.theme = theme;
-  const dark = theme === 'dark';
-  themeIcon.textContent = dark ? '☀' : '☾';
-  themeText.textContent = dark ? 'LIGHT MODE' : 'DARK MODE';
-  themeToggle.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
-  themeMeta.content = dark ? '#0e1118' : '#f3efe5';
-  localStorage.setItem('afterhours-theme', theme);
-}
-
-setTheme(storedTheme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-themeToggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark'));
+if (themeMeta) themeMeta.content = '#000000';
 
 const eventGrid = document.querySelector('#eventGrid');
+const spiralScroll = document.querySelector('#spiralScroll');
+const spiralIndex = document.querySelector('#spiralIndex');
+const spiralPath = document.querySelector('#spiralPath');
 const searchInput = document.querySelector('#eventSearch');
 const dateButtons = [...document.querySelectorAll('.date-chip')];
 const apiState = document.querySelector('#apiState');
@@ -35,65 +18,16 @@ const noResults = document.querySelector('#noResults');
 const noResultsMessage = document.querySelector('#noResultsMessage');
 const eventCount = document.querySelector('#eventCount');
 const lineupStatus = document.querySelector('#lineupStatus');
-const stationDial = document.querySelector('#stationDial');
-const tunedLabel = document.querySelector('#tunedLabel');
-const dialFrequency = document.querySelector('#dialFrequency');
-const presetButtons = [...document.querySelectorAll('#dialPresets button')];
 const featuredLink = document.querySelector('#featuredLink');
 const eventDialog = document.querySelector('#eventDialog');
 const detailContent = document.querySelector('#detailContent');
 const detailsCache = new Map();
 let events = [];
-let activeStation = 0;
 let activeDate = 'upcoming';
 let activeFeatured = null;
-let visibleEventCount = 9;
+let visibleEventCount = Number.MAX_SAFE_INTEGER;
 let eventFetchController;
 let detailFetchController;
-let hapticsEnabled = localStorage.getItem('afterhours-haptics') === 'on';
-let lastHapticAt = 0;
-
-function updateHapticsControl() {
-  hapticToggle.setAttribute('aria-pressed', String(hapticsEnabled));
-  hapticToggle.classList.toggle('is-on', hapticsEnabled);
-  hapticState.textContent = hapticsEnabled ? 'ON' : 'OFF';
-}
-
-updateHapticsControl();
-hapticToggle.addEventListener('click', () => {
-  hapticsEnabled = !hapticsEnabled;
-  localStorage.setItem('afterhours-haptics', hapticsEnabled ? 'on' : 'off');
-  updateHapticsControl();
-});
-
-function tactileTick() {
-  if (!hapticsEnabled || !('vibrate' in navigator) || !window.matchMedia('(pointer: coarse)').matches) return;
-  const now = performance.now();
-  if (now - lastHapticAt < 100) return;
-  lastHapticAt = now;
-  navigator.vibrate(8);
-}
-
-const radioScene = document.querySelector('.radio-scene');
-radioScene.addEventListener('pointerenter', (event) => {
-  if (event.pointerType === 'mouse' && window.matchMedia('(hover: hover) and (pointer: fine)').matches) tuningCursor.classList.add('is-visible');
-});
-radioScene.addEventListener('pointermove', (event) => {
-  if (event.pointerType !== 'mouse') return;
-  tuningCursor.style.setProperty('--cursor-x', `${event.clientX}px`);
-  tuningCursor.style.setProperty('--cursor-y', `${event.clientY}px`);
-  tuningCursor.classList.toggle('is-snapped', Boolean(event.target.closest('.dial-presets button, #stationDial')));
-});
-radioScene.addEventListener('pointerleave', () => {
-  tuningCursor.classList.remove('is-visible', 'is-snapped');
-});
-
-const stations = [
-  { label: 'ALL SIGNALS', frequency: '99.7', matches: () => true },
-  { label: 'IDEAS & BUILDS', frequency: '101.3', matches: (event) => event.is_technical === true },
-  { label: 'CULTURE & ARTS', frequency: '103.5', matches: (event) => event.is_technical === false },
-  { label: 'MUSIC', frequency: '106.1', matches: (event) => /music|band|concert|gig|sound/i.test(`${event.category} ${(event.tags || []).join(' ')}`) },
-];
 
 function getTodayIST() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -184,7 +118,8 @@ function matchesSearch(event, query) {
 
 function filteredEvents() {
   const query = searchInput.value.trim().toLowerCase();
-  return events.filter((event) => stations[activeStation].matches(event) && matchesDate(event) && matchesSearch(event, query));
+  return events.filter((event) => matchesDate(event) && matchesSearch(event, query))
+    .sort((a, b) => `${a.schedule_summary?.start_date || '9999-99-99'}T${a.schedule_summary?.start_time || '99:99'}`.localeCompare(`${b.schedule_summary?.start_date || '9999-99-99'}T${b.schedule_summary?.start_time || '99:99'}`));
 }
 
 function element(tag, className, text) {
@@ -195,47 +130,33 @@ function element(tag, className, text) {
 }
 
 function setFeatured() {
-  const featured = events.find((event) => event.is_featured && isUpcoming(event)) || events.find(isUpcoming) || events[0];
+  const featured = events.filter(isUpcoming).sort((a, b) => `${a.schedule_summary?.start_date || '9999-99-99'}T${a.schedule_summary?.start_time || '99:99'}`.localeCompare(`${b.schedule_summary?.start_date || '9999-99-99'}T${b.schedule_summary?.start_time || '99:99'}`))[0] || events[0];
   activeFeatured = featured || null;
-  const art = document.querySelector('#featuredArt');
   const kicker = document.querySelector('#featuredKicker');
   const title = document.querySelector('#featuredTitle');
   const blurb = document.querySelector('#featuredBlurb');
   const meta = document.querySelector('#featuredMeta');
-  const label = document.querySelector('#featuredLabel');
-  art.replaceChildren();
+  const heroImage = document.querySelector('#heroFeaturedImage');
   if (!featured) {
-    label.innerHTML = '<span class="live-dot"></span> ON AIR · BETWEEN SHOWS';
-    art.append(element('span', '', '☾'));
-    kicker.textContent = 'THE STATION IS BETWEEN SHOWS';
-    title.textContent = 'No featured event yet';
+    kicker.textContent = 'SERVICE GAP';
+    title.textContent = 'Nothing coming up yet';
     blurb.textContent = 'Check the lineup again soon.';
-    meta.replaceChildren(element('span', '', 'AFTERHOURS FM'), element('span', '', 'NEW SIGNALS SOON'));
+    meta.replaceChildren(element('span', '', 'CAMPUS EVENTS'), element('span', '', 'CHECK BACK SOON'));
     featuredLink.disabled = true;
     return;
   }
-  label.innerHTML = `<span class="live-dot"></span> ON AIR · ${featured.is_featured ? "EDITOR'S PICK" : 'NEXT UP'}`;
-  const imageUrl = safeImageUrl(featured.cover_image_url);
-  if (imageUrl) {
-    const image = element('img', 'featured-image');
-    image.dataset.remoteFallback = resizedRemoteImage(imageUrl, 360, 280);
-    image.onerror = () => {
-      if (image.dataset.remoteFallback) {
-        image.src = image.dataset.remoteFallback;
-        image.dataset.remoteFallback = '';
-      } else image.remove();
+  if (heroImage) {
+    heroImage.onerror = () => {
+      const remoteFallback = resizedRemoteImage(featured.cover_image_url, 900, 1000);
+      if (remoteFallback && heroImage.src !== remoteFallback) heroImage.src = remoteFallback;
     };
-    image.src = localCoverImage(featured.id);
-    image.alt = '';
-    image.loading = 'lazy';
-    image.decoding = 'async';
-    art.append(image);
+    heroImage.src = localCoverImage(featured.id);
+    heroImage.alt = `Scene from ${featured.name}`;
   }
-  art.append(element('span', 'featured-symbol', '✳'));
   const date = featured.schedule_summary?.start_date;
-  kicker.textContent = `${featured.is_featured ? "EDITOR'S PICK" : 'NEXT UP'} · ${displayDate(date, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()} · ${displayTime(featured.schedule_summary?.start_time)}`;
+  kicker.textContent = `UP NEXT · ${displayDate(date, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase()} · ${displayTime(featured.schedule_summary?.start_time)}`;
   title.textContent = featured.name;
-  blurb.textContent = featured.blurb || featured.category || 'A new campus signal is coming through.';
+  blurb.textContent = featured.blurb || featured.category || 'A new campus event is coming up.';
   meta.replaceChildren(
     element('span', '', `${featured.category || 'CAMPUS'} · ${featured.event_mode === 'ONLINE' ? 'ONLINE' : 'ON CAMPUS'}`),
     element('span', '', featured.registration_status === 'OPEN' ? 'REGISTRATION OPEN' : featured.registration_status === 'SOLD_OUT' ? 'SOLD OUT' : 'CHECK EVENT DETAILS'),
@@ -244,76 +165,130 @@ function setFeatured() {
   featuredLink.onclick = () => openEvent(featured.id);
 }
 
-function createCard(event, index) {
-  const card = element('article', `event-card api-event-card ${event.is_featured ? 'is-featured' : ''}`);
-  const identity = element('div', 'card-top');
-  identity.append(element('span', 'event-category', `${(event.category || 'CAMPUS').toUpperCase()} / ${event.event_type === 'WORKSHOP' ? 'WORKSHOP' : event.is_technical ? 'IDEAS' : 'CULTURE'}`));
-  identity.append(element('span', 'event-number', `FM—${String(index + 1).padStart(2, '0')}`));
-  card.append(identity);
-
-  const art = element('div', 'card-art api-card-art');
-  const imageUrl = safeImageUrl(event.cover_image_url);
-  if (imageUrl) {
-    const image = element('img', 'event-cover');
-    image.dataset.remoteFallback = resizedRemoteImage(imageUrl);
-    image.onerror = () => {
-      if (image.dataset.remoteFallback) {
-        image.src = image.dataset.remoteFallback;
-        image.dataset.remoteFallback = '';
-      } else image.remove();
-    };
-    image.src = localCoverImage(event.id);
-    image.alt = event.cover_image_alt || '';
-    image.loading = index < 3 ? 'eager' : 'lazy';
-    image.decoding = 'async';
-    image.fetchPriority = index === 0 ? 'high' : 'auto';
-    art.append(image);
-  }
-  art.append(element('span', 'art-index', String(index + 1).padStart(2, '0')));
-  art.append(element('span', 'art-waveform', '∿ ∿ ∿ ∿ ∿'));
-  if (event.is_featured) art.append(element('span', 'featured-badge', '✳ ON AIR'));
-  card.append(art);
-
+function createEventCard(event, index) {
+  const card = element('button', `event-card ${event.is_featured ? 'is-featured' : ''}`);
+  card.type = 'button';
   const date = event.schedule_summary?.start_date;
-  const dateRow = element('div', 'card-date');
-  dateRow.append(element('span', '', displayDate(date, { weekday: 'short' }).toUpperCase()));
+  const poster = element('img', 'event-poster');
+  poster.src = localCoverImage(event.id);
+  poster.alt = '';
+  poster.loading = 'lazy';
+  poster.decoding = 'async';
+  poster.onerror = () => {
+    const remoteFallback = resizedRemoteImage(event.cover_image_url, 440, 520);
+    if (remoteFallback && poster.src !== remoteFallback) poster.src = remoteFallback;
+    else poster.remove();
+  };
+  card.append(poster);
+  const dateCell = element('span', 'event-date');
+  dateCell.append(element('span', 'event-weekday', displayDate(date, { weekday: 'short' }).toUpperCase()));
   const numericDate = date ? new Date(`${date}T12:00:00+05:30`) : null;
-  dateRow.append(element('b', '', numericDate ? new Intl.DateTimeFormat('en-IN', { timeZone: TIME_ZONE, day: '2-digit' }).format(numericDate) : '—'));
-  dateRow.append(element('span', '', numericDate ? new Intl.DateTimeFormat('en-IN', { timeZone: TIME_ZONE, month: 'short' }).format(numericDate).toUpperCase() : 'TBA'));
-  dateRow.append(element('i', '', ''));
-  dateRow.append(element('span', '', displayTime(event.schedule_summary?.start_time).toUpperCase()));
-  card.append(dateRow);
-
-  const title = element('h3', '', event.name);
-  card.append(title);
-  card.append(element('p', 'event-blurb', event.blurb || 'A new frequency worth finding.'));
-  const footer = element('div', 'card-footer');
-  footer.append(element('span', '', `${event.event_mode === 'ONLINE' ? '↗ ONLINE' : '⌖ ON CAMPUS'} · ${event.registration_status === 'OPEN' ? 'REGISTRATION OPEN' : event.registration_status === 'SOLD_OUT' ? 'SOLD OUT' : 'DETAILS'}`));
-  const link = element('button', 'card-open', '↗');
-  link.type = 'button';
-  link.setAttribute('aria-label', `View details for ${event.name}`);
-  link.addEventListener('click', () => openEvent(event.id));
-  footer.append(link);
-  card.append(footer);
+  dateCell.append(element('strong', 'event-day', numericDate ? new Intl.DateTimeFormat('en-IN', { timeZone: TIME_ZONE, day: '2-digit' }).format(numericDate) : '—'));
+  dateCell.append(element('span', 'event-month', numericDate ? new Intl.DateTimeFormat('en-IN', { timeZone: TIME_ZONE, month: 'short' }).format(numericDate).toUpperCase() : 'DATE TBA'));
+  dateCell.append(element('span', 'event-time', displayTime(event.schedule_summary?.start_time).toUpperCase()));
+  card.append(dateCell);
+  const content = element('span', 'event-card-content');
+  const top = element('span', 'event-card-meta');
+  top.append(element('span', 'event-category', (event.category || 'CAMPUS').toUpperCase()));
+  top.append(element('span', 'event-number', `INDEX ${String(index + 1).padStart(2, '0')}`));
+  content.append(top);
+  content.append(element('strong', 'event-name', event.name));
+  content.append(element('span', 'event-summary', event.blurb || 'Open this event for the full details.'));
+  const foot = element('span', 'event-card-foot');
+  foot.append(element('span', '', `${event.event_mode === 'ONLINE' ? 'ONLINE' : 'ON CAMPUS'} · ${event.event_type === 'WORKSHOP' ? 'WORKSHOP' : 'EVENT'}`));
+  const status = event.registration_status === 'OPEN' ? 'REGISTRATION OPEN' : event.registration_status === 'SOLD_OUT' ? 'SOLD OUT' : event.event_status === 'COMPLETED' ? 'COMPLETED' : 'VIEW DETAILS';
+  foot.append(element('span', `event-status ${event.registration_status === 'OPEN' ? 'is-open' : ''}`, status));
+  content.append(foot);
+  card.append(content);
+  card.setAttribute('aria-label', `Open event ${index + 1}: ${event.name}, ${displayDate(date, { weekday: 'long', day: 'numeric', month: 'long' })} at ${displayTime(event.schedule_summary?.start_time)}`);
+  card.addEventListener('click', () => openEvent(event.id));
   return card;
 }
 
+let spiralFrame = 0;
+function updateSpiralLayout() {
+  if (!spiralScroll || !eventGrid) return;
+  const cards = [...eventGrid.children];
+  const pin = spiralScroll.firstElementChild;
+  const viewportHeight = pin?.clientHeight || window.innerHeight;
+  const step = Math.min(300, Math.max(210, viewportHeight * 0.42));
+  const scrollRange = Math.max(0, (cards.length - 1) * step);
+  const stageHeight = `${cards.length ? viewportHeight + scrollRange : 0}px`;
+  if (spiralScroll.style.height !== stageHeight) spiralScroll.style.height = stageHeight;
+  spiralScroll.hidden = cards.length === 0;
+  if (!cards.length) {
+    if (spiralIndex) spiralIndex.textContent = '00 / 00';
+    if (spiralPath) spiralPath.setAttribute('d', '');
+    return;
+  }
+
+  const sectionTop = spiralScroll.getBoundingClientRect().top + window.scrollY;
+  const progress = scrollRange
+    ? Math.max(0, Math.min(1, (window.scrollY - sectionTop) / scrollRange))
+    : 0;
+  const active = progress * (cards.length - 1);
+  const radius = Math.min(250, window.innerWidth * 0.34);
+  cards.forEach((card, index) => {
+    const offset = index - active;
+    const angle = offset * 0.86;
+    const distance = Math.abs(offset);
+    card.style.setProperty('--spiral-x', `${Math.sin(angle) * radius}px`);
+    card.style.setProperty('--spiral-y', `${offset * step}px`);
+    card.style.setProperty('--spiral-z', `${Math.cos(angle) * 145}px`);
+    card.style.setProperty('--spiral-yaw', `${Math.sin(angle) * 24}deg`);
+    card.style.setProperty('--spiral-roll', `${Math.sin(angle * 0.52) * 3.5}deg`);
+    card.style.setProperty('--spiral-scale', String(Math.max(0.58, 1 - distance * 0.14)));
+    card.style.setProperty('--spiral-opacity', String(Math.max(0, 1 - distance * 0.34)));
+    card.style.zIndex = String(100 - Math.round(distance * 10));
+    card.style.pointerEvents = distance < 2.4 ? 'auto' : 'none';
+    card.tabIndex = distance < 2.6 ? 0 : -1;
+  });
+
+  if (spiralIndex) {
+    spiralIndex.textContent = `${String(Math.min(cards.length, Math.floor(active) + 1)).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
+  }
+  if (spiralPath) {
+    const xRadius = (radius / window.innerWidth) * 1000;
+    const yStep = (step / viewportHeight) * 900;
+    const points = [];
+    for (let offset = -2.65; offset <= 2.66; offset += 0.08) {
+      const angle = offset * 0.86;
+      const x = 500 + Math.sin(angle) * xRadius;
+      const y = 450 + offset * yStep;
+      points.push(`${points.length ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`);
+    }
+    spiralPath.setAttribute('d', points.join(' '));
+  }
+}
+
+function requestSpiralUpdate() {
+  if (spiralFrame) return;
+  spiralFrame = window.requestAnimationFrame(() => {
+    spiralFrame = 0;
+    updateSpiralLayout();
+  });
+}
+
+window.addEventListener('scroll', requestSpiralUpdate, { passive: true });
+window.addEventListener('resize', requestSpiralUpdate);
+
 function renderEvents(resetCount = true) {
-  if (resetCount) visibleEventCount = 9;
+  if (resetCount) visibleEventCount = Number.MAX_SAFE_INTEGER;
   const results = filteredEvents();
   const visibleEvents = results.slice(0, visibleEventCount);
-  eventGrid.replaceChildren(...visibleEvents.map(createCard));
+  eventGrid.replaceChildren(...visibleEvents.map(createEventCard));
   eventGrid.hidden = results.length === 0;
+  updateSpiralLayout();
   const loadMore = document.querySelector('#loadMore');
   loadMore.hidden = results.length <= visibleEvents.length;
-  loadMore.textContent = `LOAD ${Math.min(9, results.length - visibleEvents.length)} MORE FROM THE ROTATION ↘`;
+  loadMore.textContent = `SHOW ${Math.min(9, results.length - visibleEvents.length)} MORE EVENTS ↓`;
   noResults.hidden = results.length > 0 || apiState.hidden === false;
   noResultsMessage.textContent = activeDate === 'tonight'
-    ? 'No events are scheduled tonight. Try the full week or keep the frequency open.'
+    ? 'No events are scheduled tonight. Try the full week or keep the full line open.'
     : activeDate === 'week'
-      ? 'No events this week yet. There may be more on a later frequency.'
-      : 'Try another date, search term, or station preset.';
-  eventCount.textContent = results.length ? `${String(results.length).padStart(2, '0')} ${results.length === 1 ? 'EVENT' : 'EVENTS'} ON THIS FREQUENCY` : 'NO EVENTS ON THIS FREQUENCY';
+      ? 'No events this week yet. Try a later date.'
+      : 'Try another date or search term.';
+  eventCount.textContent = results.length ? `${String(results.length).padStart(2, '0')} ${results.length === 1 ? 'EVENT' : 'EVENTS'} IN THE PROGRAMME` : 'NO EVENTS MATCH THIS SEARCH';
   eventGrid.setAttribute('aria-busy', 'false');
 }
 
@@ -322,26 +297,6 @@ document.querySelector('#loadMore').addEventListener('click', () => {
   renderEvents(false);
 });
 
-function setStation(value, { tactile = false } = {}) {
-  const previousStation = activeStation;
-  activeStation = Math.max(0, Math.min(stations.length - 1, Number(value) || 0));
-  if (tactile && activeStation !== previousStation) tactileTick();
-  const station = stations[activeStation];
-  stationDial.value = String(activeStation);
-  document.querySelector('#tuningDial').style.setProperty('--dial-position', `${activeStation / (stations.length - 1) * 100}%`);
-  stationDial.setAttribute('aria-valuetext', station.label.toLowerCase());
-  tunedLabel.textContent = station.label;
-  dialFrequency.textContent = station.frequency;
-  presetButtons.forEach((button, index) => {
-    const selected = index === activeStation;
-    button.classList.toggle('is-active', selected);
-    button.setAttribute('aria-pressed', String(selected));
-  });
-  renderEvents();
-}
-
-stationDial.addEventListener('input', (event) => setStation(stationDial.value, { tactile: event.isTrusted }));
-presetButtons.forEach((button) => button.addEventListener('click', (event) => setStation(button.dataset.station, { tactile: event.isTrusted })));
 dateButtons.forEach((button) => button.addEventListener('click', () => {
   activeDate = button.dataset.date;
   dateButtons.forEach((item) => {
@@ -360,16 +315,20 @@ document.querySelector('#resetFilters').addEventListener('click', () => {
     button.classList.toggle('selected', selected);
     button.setAttribute('aria-pressed', String(selected));
   });
-  setStation(0);
+  renderEvents();
 });
 
 function cachedEvents() {
-  try {
-    const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY));
-    return cached && Array.isArray(cached.events) && Date.now() - cached.savedAt < CACHE_TTL ? cached.events : null;
-  } catch {
-    return null;
+  for (const storageName of ['localStorage', 'sessionStorage']) {
+    try {
+      const storage = window[storageName];
+      const cached = JSON.parse(storage.getItem(CACHE_KEY));
+      if (cached && Array.isArray(cached.events) && cached.events.length && Date.now() - cached.savedAt < CACHE_TTL) return cached;
+    } catch {
+      // Storage can be unavailable or contain malformed data; try the next cache.
+    }
   }
+  return null;
 }
 
 async function loadEvents() {
@@ -378,18 +337,29 @@ async function loadEvents() {
   eventFetchController = controller;
   const timeout = window.setTimeout(() => controller.abort('timeout'), 12000);
   apiState.hidden = true;
+  apiState.classList.remove('is-inline');
   noResults.hidden = true;
-  eventGrid.hidden = false;
-  eventGrid.setAttribute('aria-busy', 'true');
+  const initialCache = cachedEvents();
+  if (initialCache) {
+    events = initialCache.events;
+    renderEvents();
+    setFeatured();
+  } else {
+    eventGrid.hidden = false;
+    eventGrid.setAttribute('aria-busy', 'true');
+  }
   lineupStatus.hidden = false;
-  lineupStatus.innerHTML = '<span class="status-wave" aria-hidden="true">〰</span> Tuning into the campus signal…';
+  lineupStatus.textContent = initialCache ? 'UPDATING THE INDEX · SHOWING YOUR SAVED EVENTS' : 'GETTING THE LATEST CAMPUS PROGRAMME…';
   try {
     const response = await fetch(API_URL, { headers: { Accept: 'application/json' }, signal: controller.signal });
-    if (!response.ok) throw new Error(response.status >= 500 ? 'The station is having trouble answering. Give it another try.' : 'The station returned an unexpected signal.');
+    if (!response.ok) throw new Error(response.status >= 500 ? 'The event service is having trouble. Try again in a moment.' : 'The event service returned an unexpected response.');
     const payload = await response.json();
-    if (!Array.isArray(payload.events)) throw new Error('The lineup arrived in an unfamiliar format. Try again in a moment.');
+    if (!Array.isArray(payload.events)) throw new Error('The event list arrived in an unfamiliar format. Try again in a moment.');
     events = payload.events;
-    try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ events, savedAt: Date.now() })); } catch { /* Storage can be unavailable in private browsing. */ }
+    const snapshot = JSON.stringify({ events, savedAt: Date.now() });
+    for (const storageName of ['localStorage', 'sessionStorage']) {
+      try { window[storageName].setItem(CACHE_KEY, snapshot); } catch { /* Storage can be unavailable in private browsing. */ }
+    }
     lineupStatus.hidden = true;
     renderEvents();
     setFeatured();
@@ -399,9 +369,10 @@ async function loadEvents() {
     eventGrid.setAttribute('aria-busy', 'false');
     lineupStatus.hidden = true;
     if (saved) {
-      events = saved;
-      apiStateTitle.textContent = 'The live signal dropped.';
-      apiStateMessage.textContent = 'Showing the latest saved lineup. Reconnect to refresh it.';
+      events = saved.events;
+      apiStateTitle.textContent = 'Saved programme is available.';
+      const savedDate = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(saved.savedAt));
+      apiStateMessage.textContent = `The event service couldn’t refresh. Showing ${saved.events.length} saved events from ${savedDate}.`;
       apiState.classList.add('is-inline');
       apiState.hidden = false;
       renderEvents();
@@ -410,12 +381,13 @@ async function loadEvents() {
     }
     eventGrid.replaceChildren();
     eventGrid.hidden = true;
+    updateSpiralLayout();
     noResults.hidden = true;
     apiState.classList.remove('is-inline');
-    apiStateTitle.textContent = 'The signal’s quiet.';
-    apiStateMessage.textContent = error.name === 'AbortError' ? 'The station took too long to answer. Try again when the signal is clearer.' : error.message || 'We couldn’t reach the station right now. Check your connection and try again.';
+    apiStateTitle.textContent = 'The event index is offline.';
+    apiStateMessage.textContent = error.name === 'AbortError' ? 'The event service took too long to answer. Check your connection, then retry.' : error.message || 'We couldn’t load the event index. Check your connection, then retry.';
     apiState.hidden = false;
-    eventCount.textContent = 'WAITING FOR THE ROTATION';
+    eventCount.textContent = 'EVENT INDEX UNAVAILABLE';
     setFeatured();
   } finally {
     window.clearTimeout(timeout);
@@ -450,16 +422,18 @@ function renderDetail(event) {
     image.decoding = 'async';
     image.onerror = () => hero.remove();
     hero.append(image);
-    hero.append(element('span', 'detail-hero-mark', 'AFTERHOURS FM · EVENT FILE'));
+    hero.append(element('span', 'detail-hero-mark', '72 · EVENT DETAILS'));
     detailContent.append(hero);
   }
   const intro = element('div', 'detail-intro');
   intro.append(element('p', 'eyebrow', `${event.category || 'CAMPUS EVENT'} · ${event.event_mode === 'ONLINE' ? 'ONLINE' : 'ON CAMPUS'}`));
-  intro.append(element('h2', '', event.name));
-  intro.append(element('p', 'detail-blurb', event.blurb || 'A frequency worth finding.'));
+  const detailTitle = element('h2', '', event.name);
+  detailTitle.id = 'detailTitle';
+  intro.append(detailTitle);
+  intro.append(element('p', 'detail-blurb', event.blurb || 'An event worth showing up for.'));
   detailContent.append(intro);
-  document.title = `${event.name} · Afterhours FM`;
-  document.querySelector('meta[name="description"]').content = event.blurb || 'Tune into this campus event on Afterhours FM.';
+  document.title = `${event.name} · 72`;
+  document.querySelector('meta[name="description"]').content = event.blurb || 'Event details from 72, the campus event index.';
 
   const metadata = element('div', 'detail-meta');
   const date = event.schedule_summary?.start_date;
@@ -474,7 +448,7 @@ function renderDetail(event) {
   if (event.description) {
     const description = element('div', 'detail-description');
     event.description.split(/\n\s*\n/).filter(Boolean).forEach((paragraph) => description.append(element('p', '', paragraph)));
-    detailContent.append(section('THE LISTENING NOTES', description));
+    detailContent.append(section('EVENT OVERVIEW', description));
   }
   const schedules = event.schedules;
   if (Array.isArray(schedules) && schedules.length) {
@@ -511,10 +485,10 @@ function renderDetail(event) {
       item.append(element('p', '', faq.answer));
       faqs.append(item);
     });
-    detailContent.append(section('ON THE FREQUENCY', faqs));
+    detailContent.append(section('QUICK QUESTIONS', faqs));
   }
   const organizers = (event.organizers || []).map((item) => item.name).filter(Boolean);
-  if (organizers.length) detailContent.append(element('p', 'detail-organizers', `BROADCAST BY ${organizers.join(' · ')}`));
+  if (organizers.length) detailContent.append(element('p', 'detail-organizers', `ORGANIZED BY ${organizers.join(' · ')}`));
 }
 
 async function openEvent(id, { updateUrl = true } = {}) {
@@ -524,7 +498,7 @@ async function openEvent(id, { updateUrl = true } = {}) {
     url.searchParams.set('event', id);
     history.pushState({ eventId: id }, '', url);
   }
-  detailContent.replaceChildren(element('div', 'detail-loading', '〰  Tuning in to event details…'));
+  detailContent.replaceChildren(element('div', 'detail-loading', '✳  LOADING EVENT DETAILS…'));
   if (!eventDialog.open) eventDialog.showModal();
   document.querySelector('#dialogClose').focus();
   if (detailsCache.has(id)) {
@@ -532,23 +506,32 @@ async function openEvent(id, { updateUrl = true } = {}) {
     return;
   }
   detailFetchController?.abort();
-  detailFetchController = new AbortController();
-  const timeout = window.setTimeout(() => detailFetchController.abort(), 12000);
+  const controller = new AbortController();
+  detailFetchController = controller;
+  let response = null;
+  const timeout = window.setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch(`${API_URL}/${encodeURIComponent(id)}`, { headers: { Accept: 'application/json' }, signal: detailFetchController.signal });
+    response = await fetch(`${API_URL}/${encodeURIComponent(id)}`, { headers: { Accept: 'application/json' }, signal: controller.signal });
     const body = await response.json().catch(() => ({}));
-    if (response.status === 404) throw new Error('No event was found on that frequency. It may have been removed or the link may be mistuned.');
-    if (!response.ok) throw new Error(response.status >= 500 ? 'The station couldn’t fetch this event right now. Try again in a moment.' : 'The event details could not be read. Try again shortly.');
+    if (response.status === 404) throw new Error('No event was found. It may have been removed or the link may be outdated.');
+    if (!response.ok) throw new Error(response.status >= 500 ? 'The event service couldn’t fetch the details right now. Try again in a moment.' : 'The event details could not be read. Try again shortly.');
     if (!body.event || typeof body.event !== 'object') throw new Error('The event details arrived in an unfamiliar format.');
     detailsCache.set(id, body.event);
     renderDetail(body.event);
   } catch (error) {
-    if (error.name === 'AbortError') return;
+    if (detailFetchController !== controller) return;
+    const cachedEvent = events.find((event) => String(event.id) === String(id));
+    const canUseCachedEvent = error.name === 'AbortError' || !response || response.status >= 500;
+    if (cachedEvent && canUseCachedEvent) {
+      renderDetail(cachedEvent);
+      detailContent.prepend(element('p', 'detail-stale', 'The event service is unavailable. Showing saved event details; some fields may be missing.'));
+      return;
+    }
     detailContent.replaceChildren();
     const state = element('div', 'detail-error');
     state.append(element('span', '', '〰'));
-    state.append(element('h2', '', 'Couldn’t tune in.'));
-    state.append(element('p', '', error.message || 'The station lost this event signal. Try again.'));
+    state.append(element('h2', '', 'The details are out of reach.'));
+    state.append(element('p', '', error.message || 'We couldn’t load this event. Try again.'));
     const retry = element('button', 'retry-button', 'TRY AGAIN ↻');
     retry.type = 'button';
     retry.addEventListener('click', () => openEvent(id, { updateUrl: false }));
@@ -567,8 +550,8 @@ function closeEventDialog({ updateUrl = true } = {}) {
     url.searchParams.delete('event');
     history.replaceState({}, '', url);
   }
-  document.title = 'Afterhours FM — Campus, on your frequency';
-  document.querySelector('meta[name="description"]').content = "Afterhours FM — your frequency for campus events, late-night ideas, and good company.";
+  document.title = '72 — Campus, in session';
+  document.querySelector('meta[name="description"]').content = 'A sharper way to find the events, ideas and people shaping campus life.';
 }
 
 eventDialog.addEventListener('cancel', (event) => {
@@ -591,18 +574,19 @@ window.addEventListener('popstate', () => {
 
 const menuButton = document.querySelector('#menuButton');
 const nav = document.querySelector('.main-nav');
-menuButton.addEventListener('click', () => {
-  const open = nav.classList.toggle('open');
-  menuButton.setAttribute('aria-expanded', String(open));
-  menuButton.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
-});
-nav.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => {
-  nav.classList.remove('open');
-  menuButton.setAttribute('aria-expanded', 'false');
-  menuButton.setAttribute('aria-label', 'Open navigation');
-}));
+if (menuButton && nav) {
+  menuButton.addEventListener('click', () => {
+    const open = nav.classList.toggle('open');
+    menuButton.setAttribute('aria-expanded', String(open));
+    menuButton.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+  });
+  nav.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => {
+    nav.classList.remove('open');
+    menuButton.setAttribute('aria-expanded', 'false');
+    menuButton.setAttribute('aria-label', 'Open navigation');
+  }));
+}
 
-document.querySelector('#retryButton').addEventListener('click', loadEvents);
 loadEvents().then(() => {
   const eventId = new URLSearchParams(window.location.search).get('event');
   if (eventId) openEvent(eventId, { updateUrl: false });
